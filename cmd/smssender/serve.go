@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/gorilla/mux"
+	core "github.com/homayoonalimohammadi/go-sms-sender/smssender/internal/app"
+	"github.com/homayoonalimohammadi/go-sms-sender/smssender/internal/database"
 	"github.com/kavenegar/kavenegar-go"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -24,40 +26,42 @@ var (
 	}
 )
 
-type SendRequest struct {
-	To      string
-	From    string
-	Message string
-	SentAt  time.Time
-}
-
-type SendResponse struct {
-	status int
-}
 type Sender interface {
-	Send(SendRequest) SendResponse
+	Send(*core.SendRequest) error
 }
 
 type SmsSender struct {
-	config *Config
-	api    kavenegar.Kavenegar
+	config           *SmsSenderConfig
+	postgresProvider database.Database
+	api              *kavenegar.Kavenegar
 }
 
 func serve(cmd *cobra.Command, args []string) {
 
 	config := loadConfigOrPanic(cmd, args)
-	smsSender = NewSmsSender(config)
+	postgresProvider, err := database.NewPostgresProvider(&config.PostgresDB)
+	if err != nil {
+		log.Fatalln("unable to provider postgres:", err)
+	}
+	defer postgresProvider.Close()
+	log.Println("connected to postgres")
+
+	// apply postgres migrations
+	err = postgresProvider.Migrate()
+	if err != nil {
+		log.Fatalln("error applying migrations to the postgres db:", errors.WithStack(err))
+	}
+
+	smsSender = NewSmsSender(&config.SmsSender, postgresProvider)
 
 	router := mux.NewRouter()
-	router.HandleFunc("/", rootHandler)
-	router.HandleFunc("/send", sendHandler)
-	router.HandleFunc("/records", recordsHandler)
+	router.HandleFunc("/", RootHandler).Methods("GET")
+	router.HandleFunc("/send", SendHandler).Methods("POST")
+	router.HandleFunc("/records", RecordsHandler).Methods("GET")
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%s", config.SmsSender.Host, config.SmsSender.Port),
-		WriteTimeout: time.Second * 15,
-		ReadTimeout:  time.Second * 15,
-		Handler:      router,
+		Addr:    fmt.Sprintf("%s:%s", config.SmsSender.Host, config.SmsSender.Port),
+		Handler: router,
 	}
 
 	go func() {
@@ -78,7 +82,6 @@ func serve(cmd *cobra.Command, args []string) {
 	server.Shutdown(ctx)
 
 	log.Println("Gracefully shutting down...")
-	os.Exit(0)
 }
 
 func loadConfigOrPanic(cmd *cobra.Command, args []string) *Config {
@@ -90,30 +93,34 @@ func loadConfigOrPanic(cmd *cobra.Command, args []string) *Config {
 	return config
 }
 
-func NewSmsSender(config *Config) *SmsSender {
-	return &SmsSender{config: config}
+func NewSmsSender(config *SmsSenderConfig, postgresProvider *database.PostgresProvider) *SmsSender {
+	api := kavenegar.New(config.ApiKey)
+	return &SmsSender{config: config, postgresProvider: postgresProvider, api: api}
 }
 
-func (s *SmsSender) Send(req *SendRequest) error {
-	resp, err := s.api.Message.Send(
-		req.From,
-		[]string{req.To},
-		req.Message,
-		nil,
-	)
-	if err != nil {
-		return err
-	}
+func (s *SmsSender) Send(req *core.SendRequest) error {
+	// resp, err := s.api.Message.Send(
+	// 	req.Sender,
+	// 	[]string{req.Receptor},
+	// 	req.Message,
+	// 	nil,
+	// )
+	// if err != nil {
+	// 	return err
+	// }
 
-	// save the record to DB
-	go saveToDB(req)
+	// for _, r := range resp {
+	// 	log.Printf("successfully sent message from %s to %s \n", r.Sender, r.Receptor)
+	// }
+	// return nil
 
-	for _, r := range resp {
-		log.Printf("successfully sent message from %s to %s", r.Sender, r.Receptor)
-	}
+	log.Printf("of course the message was sent from %s to %s! \n", req.Sender, req.Receptor)
 	return nil
 }
 
-func saveToDB(req *SendRequest) {
-	// TODO: Implement
+func (s *SmsSender) SaveToPostgres(req *core.SendRequest) {
+	err := s.postgresProvider.Save(req)
+	if err != nil {
+		log.Println("error saving request to database:", err)
+	}
 }

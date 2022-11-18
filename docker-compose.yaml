@@ -1,0 +1,24 @@
+version: "3" 
+
+services: 
+  web: 
+    image: homayoonalimohammadi/smssender:1.0.0
+    build: .
+    container_name: "SmsSender"
+    env_file:
+      - ./.env
+    ports:
+      - 8000:8000
+    depends_on: 
+      - postgres
+    command: "/bin/wait-for-it.sh postgres:5432 -t 10 \
+              -- /bin/smssender serve"
+
+  postgres:
+    image: postgres:12
+    container_name: Postgres
+    env_file: ./.env
+    ports: 
+      - 8001:5432
+    volumes: 
+      - ./pg_data:/var/lib/postgresql/data

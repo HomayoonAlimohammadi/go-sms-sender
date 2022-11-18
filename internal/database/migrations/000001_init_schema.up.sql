@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS smssender (
+    id SERIAL PRIMARY KEY,
+    sender VARCHAR(16) NOT NULL,
+    receptor VARCHAR(16) NOT NULL,
+    message VARCHAR(512) NOT NULL,
+    sent_at TIMESTAMP NOT NULL
+);
