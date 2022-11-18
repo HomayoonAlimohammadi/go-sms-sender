@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/homayoonalimohammadi/go-sms-sender/smssender/internal/database"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -11,22 +12,14 @@ import (
 
 type SmsSenderConfig struct {
 	ApiKey          string
-	Host            string
 	Port            string
+	Host            string
 	GracefulTimeout time.Duration
 }
 
-type PostgresConfig struct {
-	Host     string
-	Port     string
-	Password string
-	DbName   string
-	SslMode  string
-}
-
 type Config struct {
-	SmsSender SmsSenderConfig
-	DB        PostgresConfig
+	SmsSender  SmsSenderConfig
+	PostgresDB database.PostgresConfig
 }
 
 func loadConfig(cmd *cobra.Command, args []string) (*Config, error) {
@@ -48,6 +41,6 @@ func loadConfig(cmd *cobra.Command, args []string) (*Config, error) {
 		return nil, errors.WithStack(err)
 	}
 
-	log.Println(config)
+	log.Printf("Config: %+v \n", config)
 	return &config, nil
 }
